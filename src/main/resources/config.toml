@@ -21,9 +21,19 @@ ping_interval = 30
 [discord]
 # Bot token from https://discordapp.com/developers/applications/
 # Not server overridable
-token = "TOKEN"
+token = "123456789012345678"
 # Default channel ID to send Minecraft chat messages to
-channel = "000000000000000000"
+channel = "123456789012345678"
+
+
+verification_channel_id = "123456789012345678"  # Replace with actual Discord channel ID
+verified_role_id = "123456789012345678"        # Replace with actual verified role ID
+linked_role_id= "123456789012345678"
+verify_panel_title = "Verification Required"
+verify_panel_color = "#00FF00" # green
+verify_panel_message = "Click below to verify your account."
+verify_button_message = "✅ Verify"
+role_given_message = "You are now verified!"
 
 # Show messages from bots in Minecraft chat
 show_bot_messages = false
@@ -45,6 +55,11 @@ enable_everyone_and_here = false
 # Use a value of 0 to disable
 # Not server overridable
 update_channel_topic_interval = 0
+
+[database]
+url = ""
+user = ""
+password = ""
 
 # Channel topic config (if enabled)
 [discord.channel_topic]

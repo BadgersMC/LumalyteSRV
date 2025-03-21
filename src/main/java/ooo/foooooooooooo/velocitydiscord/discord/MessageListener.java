@@ -2,12 +2,16 @@ package ooo.foooooooooooo.velocitydiscord.discord;
 
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Message;
+import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
+import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import ooo.foooooooooooo.velocitydiscord.VelocityDiscord;
 import ooo.foooooooooooo.velocitydiscord.util.StringTemplate;
+import ooo.foooooooooooo.velocitydiscord.util.LinkManager;
+import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nonnull;
 import java.awt.*;
@@ -17,6 +21,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static ooo.foooooooooooo.velocitydiscord.util.LinkManager.generateRandomCode;
+import static ooo.foooooooooooo.velocitydiscord.util.LinkManager.storeLinkCode;
 
 public class MessageListener extends ListenerAdapter {
   private static final Pattern WEBHOOK_ID_REGEX = Pattern.compile("^https://discord\\.com/api/webhooks/(\\d+)/.+$");
@@ -52,9 +59,9 @@ public class MessageListener extends ListenerAdapter {
   }
 
   @Override
-  public void onMessageReceived(@Nonnull MessageReceivedEvent event) {
+  public void onMessageReceived(@NotNull MessageReceivedEvent event) {
     if (!event.isFromType(ChannelType.TEXT)) {
-      VelocityDiscord.LOGGER.trace("ignoring non text channel message");
+      VelocityDiscord.LOGGER.trace("Ignoring non-text channel message");
       return;
     }
 
@@ -62,17 +69,47 @@ public class MessageListener extends ListenerAdapter {
       this.jda = event.getJDA();
     }
 
-    var channel = event.getChannel().asTextChannel();
-    var targetServerNames = this.channelToServersMap.get(channel.getIdLong());
+    // Handle commands first, regardless of channel mapping
+    String messageContent = event.getMessage().getContentRaw();
 
+    if (messageContent.equalsIgnoreCase("!link")) {
+      LinkManager.generateRandomCode()
+        .thenCompose(code -> LinkManager.storeLinkCode(event.getAuthor().getId(), code).thenApply(v -> code))
+        .whenComplete((code, throwable) -> {
+          if (throwable != null) {
+            VelocityDiscord.LOGGER.error("Error generating/storing link code for user {}: {}", event.getAuthor().getId(), throwable.getMessage());
+            event.getChannel().sendMessage("❌ An error occurred while generating your link code. Please try again later.").queue();
+            return;
+          }
+          event.getAuthor().openPrivateChannel()
+            .flatMap(channelPM -> channelPM.sendMessage("Use this code in-game to link: **" + code + "**"))
+            .queue(
+              success -> {
+                event.getChannel().sendMessage("✅ Check your DMs for your linking code!").queue();
+                VelocityDiscord.LOGGER.info("Sent link code {} to user {}", code, event.getAuthor().getId());
+              },
+              failure -> {
+                event.getChannel().sendMessage("❌ Failed to send DM. Please ensure your DMs are open.").queue();
+                VelocityDiscord.LOGGER.warn("Failed to send DM to user {}: {}", event.getAuthor().getId(), failure.getMessage());
+              }
+            );
+        });
+      return;
+    } else if (messageContent.equalsIgnoreCase("!verify")) {
+      // Handle !verify command (if implemented)
+      event.getChannel().sendMessage("✅ Verification request sent! Check the verification channel.").queue();
+      return;
+    }
+
+    // Existing message forwarding logic
+    TextChannel channel = event.getChannel().asTextChannel();
+    List<String> targetServerNames = this.channelToServersMap.get(channel.getIdLong());
     if (targetServerNames == null) {
       return;
     }
 
     VelocityDiscord.LOGGER.trace("Received message from Discord channel {} for servers {}",
-      channel.getName(),
-      targetServerNames
-    );
+      channel.getName(), targetServerNames);
 
     var messages = new HashMap<String, String>();
     for (var serverName : targetServerNames) {
@@ -91,6 +128,12 @@ public class MessageListener extends ListenerAdapter {
 
       server.sendMessage(MiniMessage.miniMessage().deserialize(message).asComponent());
     }
+  }
+
+  private void sendVerificationMessage(User user) {
+    user.openPrivateChannel()
+      .flatMap(channel -> channel.sendMessage("✅ Verification request sent! Check the verification channel."))
+      .queue();
   }
 
   private String serializeMinecraftMessage(MessageReceivedEvent event, String server) {

@@ -41,6 +41,42 @@ public class BotConfig extends BaseConfig {
   @Key(value = "discord.update_channel_topic_interval", overridable = false)
   public int UPDATE_CHANNEL_TOPIC_INTERVAL_MINUTES = -1;
 
+  // Guild ID
+  @Key("discord.guild_id")
+  public String GUILD_ID = "";
+
+  // Verification system
+  @Key("discord.verification_channel_id")
+  public String VERIFICATION_CHANNEL_ID = "";
+  @Key("discord.verified_role_id")
+  public String VERIFIED_ROLE_ID = "";
+  @Key("discord.verify_panel_color")
+  public String VERIFY_PANEL_COLOR = "#00FF00"; // green
+  @Key("discord.verify_panel_message")
+  public String VERIFY_PANEL_MESSAGE = "Click below to verify your account.";
+  @Key ("discord.verify_panel_title")
+  public String VERIFY_PANEL_TITLE = "Verification Required";
+  @Key("discord.verify_button_message")
+  public String VERIFY_BUTTON_MESSAGE = "✅ Verify";
+  @Key("discord.role_given_message")
+  public String ROLE_GIVEN_MESSAGE = "You are now verified!";
+
+  // Linking System
+  @Key("discord.linked_role_id")
+  public String LINKED_ROLE_ID = "";
+
+  // Database configuration
+  private static final String DefaultDbUrl = "jdbc:mysql://localhost:3306/database";
+  private static final String DefaultDbUser = "user";
+  private static final String DefaultDbPassword = "password";
+
+  @Key("database.url")
+  public String DB_URL = DefaultDbUrl;
+  @Key("database.user")
+  public String DB_USER = DefaultDbUser;
+  @Key("database.password")
+  public String DB_PASSWORD = DefaultDbPassword;
+
   public BotConfig(Config config) {
     super(config);
     this.listCommand = new ListCommandConfig(config);

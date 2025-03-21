@@ -1,3 +1,5 @@
+import com.github.jengelman.gradle.plugins.shadow.transformers.ServiceFileTransformer
+
 plugins {
   id 'com.gradleup.shadow' version '8.3.0'
   id 'java-library'
@@ -28,7 +30,7 @@ dependencies {
     changing = true
   }
 
-  shade implementation("net.dv8tion:JDA:$jda_version") {
+  implementation("net.dv8tion:JDA:$jda_version") {
     exclude module: 'opus-java'
   }
 
@@ -36,6 +38,9 @@ dependencies {
 
   implementation "com.electronwill.night-config:toml:$night_config_version"
   implementation "com.github.unilock:yeplib:$yeplib_version"
+  // implementation("com.mysql:mysql-connector-j:$mysql_version")
+  implementation ("org.mariadb.jdbc:mariadb-java-client:$mariadb_version")
+  implementation ("com.zaxxer:HikariCP:$hikaricp_version")
 
   testImplementation platform("org.junit:junit-bom:$junit_version")
   testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -46,9 +51,11 @@ dependencies {
 
 shadowJar {
   setArchiveClassifier(null)
-  setConfigurations([project.configurations.shade])
   relocate("net.dv8tion", "ooo.foooooooooooo.velocitydiscord.lib.net.dv8tion")
-  minimize()
+  relocate("org.mariadb", "ooo.foooooooooooo.velocitydiscord.lib.org.mariadb")
+  transform(ServiceFileTransformer) {
+    path = 'META-INF/services/java.sql.Driver'
+  }
 }
 
 build {

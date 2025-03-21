@@ -1,6 +1,7 @@
 package ooo.foooooooooooo.velocitydiscord;
 
 import com.google.inject.Inject;
+import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
@@ -10,16 +11,22 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.scheduler.ScheduledTask;
+import net.dv8tion.jda.api.JDA;
 import ooo.foooooooooooo.velocitydiscord.commands.Commands;
 import ooo.foooooooooooo.velocitydiscord.compat.LuckPerms;
 import ooo.foooooooooooo.velocitydiscord.config.Config;
+import ooo.foooooooooooo.velocitydiscord.database.DatabaseManager;
 import ooo.foooooooooooo.velocitydiscord.discord.Discord;
 import ooo.foooooooooooo.velocitydiscord.yep.YepListener;
 import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.concurrent.TimeUnit;
+
 
 @Plugin(
   id = "discord",
@@ -34,8 +41,8 @@ import java.util.concurrent.TimeUnit;
   }
 )
 public class VelocityDiscord {
-  public static final String PluginName = "Velocity Discord Bridge";
-  public static final String PluginDescription = "Velocity Discord Chat Bridge";
+  public static final String PluginName = "LumaLyte-SRV";
+  public static final String PluginDescription = "Velocity Discord Chat and Verification bridge for LumaLyte";
   public static final String PluginVersion = "2.0.0";
   public static final String PluginUrl = "https://github.com/fooooooooooooooo/VelocityDiscord";
 
@@ -53,6 +60,8 @@ public class VelocityDiscord {
   private static VelocityDiscord instance;
 
   private final Path dataDirectory;
+
+  private DatabaseManager databaseManager;
 
   @Nullable
   private VelocityListener listener = null;
@@ -86,6 +95,7 @@ public class VelocityDiscord {
       return;
     }
 
+    this.databaseManager = new DatabaseManager(CONFIG.bot);
     this.discord = new Discord();
 
     if (server.getPluginManager().isLoaded(VelocityDiscord.YeplibId)) {
@@ -97,6 +107,10 @@ public class VelocityDiscord {
 
   public static Discord getDiscord() {
     return instance.discord;
+  }
+
+  public static DatabaseManager getDatabaseManager() {
+    return instance.databaseManager;
   }
 
   public static VelocityListener getListener() {
@@ -120,7 +134,6 @@ public class VelocityDiscord {
     if (this.yep != null) {
       register(this.yep);
     }
-
     SERVER.getChannelRegistrar().register(YepIdentifier);
 
     if (CONFIG != null) {
@@ -128,7 +141,20 @@ public class VelocityDiscord {
       tryStartTopicScheduler();
     }
 
-    Commands.RegisterCommands(SERVER.getCommandManager());
+// Register commands using CommandMeta
+    CommandMeta linkMeta = SERVER.getCommandManager().metaBuilder("link")
+      .aliases("discordlink") // Optional alias to avoid conflicts
+      .plugin(this)
+      .build();
+    SERVER.getCommandManager().register(linkMeta, new VelocityListener.LinkCommand(this));
+    LOGGER.info("Registered /link command");
+
+    CommandMeta unlinkMeta = SERVER.getCommandManager().metaBuilder("unlink")
+      .aliases("discordunlink")
+      .plugin(this)
+      .build();
+    SERVER.getCommandManager().register(unlinkMeta, new VelocityListener.LinkCommand.UnlinkCommand(this));
+    LOGGER.info("Registered /unlink command");
 
     try {
       if (SERVER.getPluginManager().getPlugin("luckperms").isPresent()) {
@@ -148,6 +174,10 @@ public class VelocityDiscord {
   public void onProxyShutdown(ProxyShutdownEvent event) {
     if (this.discord != null) {
       this.discord.shutdown();
+    }
+    if (this.databaseManager != null) {
+      this.databaseManager.close();
+      LOGGER.info("Database connection pool closed.");
     }
   }
 
@@ -192,12 +222,12 @@ public class VelocityDiscord {
       }
     }
 
-    pluginDisabled = CONFIG.isFirstRun();
+    // pluginDisabled = CONFIG.isFirstRun();
 
-    if (pluginDisabled) {
-      LOGGER.error("This is the first time you are running this plugin."
-        + " Please configure it in the config.toml file. Disabling plugin.");
-    }
+    //if (pluginDisabled) {
+    //  LOGGER.error("This is the first time you are running this plugin."
+    //    + " Please configure it in the config.toml file. Disabling plugin.");
+    //}
 
     return error;
   }

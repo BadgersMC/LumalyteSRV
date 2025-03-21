@@ -4,11 +4,12 @@ import com.velocitypowered.api.proxy.Player;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
-import net.dv8tion.jda.api.entities.Activity;
-import net.dv8tion.jda.api.entities.IncomingWebhookClient;
-import net.dv8tion.jda.api.entities.WebhookClient;
+import net.dv8tion.jda.api.entities.*;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
+import net.dv8tion.jda.api.interactions.components.ActionRow;
+import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.requests.GatewayIntent;
@@ -27,11 +28,14 @@ import ooo.foooooooooooo.velocitydiscord.util.StringTemplate;
 import javax.annotation.Nonnull;
 import java.awt.*;
 import java.lang.management.ManagementFactory;
+
 import java.util.List;
 import java.util.Queue;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+
+import static ooo.foooooooooooo.velocitydiscord.util.LinkManager.markUserAsVerified;
 
 public class Discord extends ListenerAdapter {
   private static final Pattern EveryoneAndHerePattern = Pattern.compile("@(?<ping>everyone|here)");
@@ -49,9 +53,10 @@ public class Discord extends ListenerAdapter {
 
   private boolean ready = false;
 
-  private JDA jda;
+  public JDA jda;
 
   private String lastToken;
+  private String verificationMessageId;
 
   private IncomingWebhookClient webhookClient;
 
@@ -62,10 +67,21 @@ public class Discord extends ListenerAdapter {
 
   private int lastPlayerCount = -1;
 
+  private final String verificationChannelId;
+  private final String verifiedRoleId;
+  private final String roleGivenMessage;
+
   public Discord() {
     this.messageListener = new MessageListener(this.serverChannels);
-
+    this.verificationChannelId = VelocityDiscord.CONFIG.bot.VERIFICATION_CHANNEL_ID; // Add this to your config
+    this.verifiedRoleId = VelocityDiscord.CONFIG.bot.VERIFIED_ROLE_ID; // Add this to your config
+    this.roleGivenMessage = VelocityDiscord.CONFIG.bot.ROLE_GIVEN_MESSAGE;
     onConfigReload();
+  }
+
+  // JDA access for all :)
+  public JDA getJda() {
+    return this.jda;
   }
 
   public void onConfigReload() {
@@ -130,6 +146,9 @@ public class Discord extends ListenerAdapter {
 
     this.ready = true;
 
+    // Send or ensure the verification message exists
+    sendOrUpdateVerificationMessage();
+
     for (var msg : this.preReadyQueue) {
       msg.send(this);
     }
@@ -169,6 +188,125 @@ public class Discord extends ListenerAdapter {
       for (var entry : this.commands.entrySet()) {
         guild.upsertCommand(entry.getKey(), entry.getValue().description()).queue();
       }
+    }
+  }
+
+  private void sendOrUpdateVerificationMessage() {
+    TextChannel channel = jda.getTextChannelById(verificationChannelId);
+    if (channel == null) {
+      VelocityDiscord.LOGGER.warn("Verification channel with ID {} not found. Cannot send verification message.", verificationChannelId);
+      return;
+    }
+
+    // Check if a verification message already exists
+    channel.getHistory().retrievePast(50).queue(messages -> {
+      for (Message message : messages) {
+        if (message.getAuthor().getId().equals(jda.getSelfUser().getId())) {
+          // Check if the message has our verification button
+          for (ActionRow row : message.getActionRows()) {
+            for (Button button : row.getButtons()) {
+              if ("verify_user".equals(button.getId())) {
+                // Found an existing verification message
+                this.verificationMessageId = message.getId();
+                VelocityDiscord.LOGGER.info("Found existing verification message with ID {}", verificationMessageId);
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      // No existing verification message found, send a new one
+      Color embedColor;
+      try {
+        embedColor = Color.decode(VelocityDiscord.CONFIG.bot.VERIFY_PANEL_COLOR);
+      } catch (NumberFormatException e) {
+        VelocityDiscord.LOGGER.warn("Invalid color format in VERIFY_PANEL_COLOR: {}. Defaulting to green.", VelocityDiscord.CONFIG.bot.VERIFY_PANEL_COLOR);
+        embedColor = Color.GREEN;
+      }
+
+      EmbedBuilder embed = new EmbedBuilder()
+        .setTitle(VelocityDiscord.CONFIG.bot.VERIFY_PANEL_TITLE)
+        .setDescription(VelocityDiscord.CONFIG.bot.VERIFY_PANEL_MESSAGE)
+        .setColor(embedColor);
+
+      Button verifyButton = Button.primary("verify_user", VelocityDiscord.CONFIG.bot.VERIFY_BUTTON_MESSAGE);
+
+      channel.sendMessageEmbeds(embed.build())
+        .setActionRow(verifyButton)
+        .queue(
+          message -> {
+            this.verificationMessageId = message.getId();
+            VelocityDiscord.LOGGER.info("Sent persistent verification message with ID {} in channel {}", message.getId(), channel.getId());
+          },
+          failure -> VelocityDiscord.LOGGER.error("Failed to send persistent verification message: {}", failure.getMessage())
+        );
+    }, failure -> VelocityDiscord.LOGGER.error("Failed to retrieve message history for verification channel: {}", failure.getMessage()));
+  }
+
+  @Override
+  public void onButtonInteraction(ButtonInteractionEvent event) {
+    String buttonId = event.getComponentId();
+    if (!"verify_user".equals(buttonId)) {
+      return;
+    }
+
+    User user = event.getUser();
+
+    // Defer the reply to avoid timeout
+    event.deferReply(true).queue();
+
+    // Mark the user as verified (e.g., in a database)
+    try {
+      markUserAsVerified(user.getId());
+      VelocityDiscord.LOGGER.info("Marked user {} as verified", user.getId());
+    } catch (Exception e) {
+      VelocityDiscord.LOGGER.error("Failed to mark user {} as verified: {}", user.getId(), e.getMessage());
+      event.getHook().sendMessage("Verification failed: Unable to process your verification. Please try again later.")
+        .setEphemeral(true)
+        .queue();
+      return;
+    }
+
+    // Assign the verified role
+    if (verifiedRoleId == null || verifiedRoleId.isEmpty()) {
+      VelocityDiscord.LOGGER.warn("Verified role ID not configured. Skipping role assignment for user {}", user.getId());
+      event.getHook().sendMessage("Verification completed, but no role was assigned due to configuration.")
+        .setEphemeral(true)
+        .queue();
+    } else {
+      Guild guild = event.getGuild();
+      if (guild == null) {
+        VelocityDiscord.LOGGER.error("Guild not found for verification of user {}", user.getId());
+        event.getHook().sendMessage("Verification failed: Guild not found.")
+          .setEphemeral(true)
+          .queue();
+        return;
+      }
+
+      Role role = guild.getRoleById(verifiedRoleId);
+      if (role == null) {
+        VelocityDiscord.LOGGER.error("Verified role with ID {} not found in guild {}", verifiedRoleId, guild.getName());
+        event.getHook().sendMessage("Verification failed: Role not found.")
+          .setEphemeral(true)
+          .queue();
+        return;
+      }
+
+      guild.addRoleToMember(user, role).queue(
+        success -> {
+          VelocityDiscord.LOGGER.info("Assigned verified role {} to user {} in guild {}", role.getName(), user.getId(), guild.getName());
+          event.getHook().sendMessage(roleGivenMessage)
+            .setEphemeral(true)
+            .queue();
+        },
+        failure -> {
+          VelocityDiscord.LOGGER.error("Failed to assign verified role to user {}: {}", user.getId(), failure.getMessage());
+          event.getHook().sendMessage("Verification failed: " + failure.getMessage())
+            .setEphemeral(true)
+            .queue();
+        }
+      );
     }
   }
 
