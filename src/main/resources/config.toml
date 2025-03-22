@@ -220,7 +220,8 @@ embed_color = "#bf4040"
 [discord.chat.server_start]
 # Placeholders available: {server}
 # Can be disabled with "" or false
-format = "**{server} has started**"
+ format = ""
+# format = "**{server} has started**"
 type = "text"
 # Can be disabled with "" or false
 embed_color = "#40bf4f"
@@ -228,7 +229,8 @@ embed_color = "#40bf4f"
 [discord.chat.server_stop]
 # Placeholders available: {server}
 # Can be disabled with "" or false
-format = "**{server} has stopped**"
+ format = ""
+# format = "**{server} has stopped**"
 type = "text"
 # Can be disabled with "" or false
 embed_color = "#bf4040"
